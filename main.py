@@ -19,6 +19,7 @@ def main():
     print(patches[0][0].shape) # patches[0] is the first patch, patches[0][0] is the vertices in this patch
 
     Hgt, ngt = compute_gt_heightmap(patches[0][0], patches[0][1], ngt) # try a patch with pre_computed ngt
+    # This ngt should be unchanged because it's pre_computed global ngt
     print(Hgt.shape)
     print(ngt.shape)
 
