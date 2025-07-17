@@ -114,4 +114,4 @@ def compute_gt_heightmap(vertices, faces, k=32, r=1.0, sigma=1.0):
 
     # Safe division
     result = torch.where(W != 0, HN / W, torch.zeros_like(HN))
-    return result[0] # shape: (1, k, k) because it's for one patch
+    return result[0], n # result[0] is (k, k) because it's for one patch, n is torch.Size([3])

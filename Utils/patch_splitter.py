@@ -6,14 +6,14 @@ def split_into_patches(vertices, faces, num_patches=3, patch_radius=10.0):
 
     Args:
         vertices: (N, 3) torch.FloatTensor
-        faces: (M, 3) torch.LongTensor
+        faces: (M, 3) torch.LongTensor (1-based indices!)
         num_patches: int, number of patches to sample
         patch_radius: float, radius for each patch
 
     Returns:
         patch_list: list of tuples (patch_vertices, patch_faces)
             - patch_vertices: (P, 3) torch.FloatTensor
-            - patch_faces: (Q, 3) torch.LongTensor (local indices)
+            - patch_faces: (Q, 3) torch.LongTensor (1-based local indices)
     """
     N = vertices.shape[0]
     patches = []
@@ -26,22 +26,35 @@ def split_into_patches(vertices, faces, num_patches=3, patch_radius=10.0):
         # Step 1: Find vertices within radius
         distances = torch.norm(vertices - center, dim=1)
         mask = distances < patch_radius
-        patch_vertex_indices = torch.nonzero(mask).squeeze(1)
+        patch_vertex_indices = torch.nonzero(mask).squeeze(1)  # 0-based
         patch_vertices = vertices[patch_vertex_indices]
 
-        # Step 2: Build a mapping from global vertex index → local index
-        global_to_local = -torch.ones(N, dtype=torch.long)
-        global_to_local[patch_vertex_indices] = torch.arange(patch_vertex_indices.size(0))
+        if patch_vertex_indices.numel() == 0:
+            continue  # skip empty patch
 
-        # Step 3: Filter faces: keep only those with all vertices in the patch
+        # Step 2: Filter faces where all 3 vertices are in the patch
+        # faces: 1-based, so subtract 1 for indexing
         face_mask = mask[faces - 1].all(dim=1)
-        patch_faces_global = faces[face_mask] + 1
+        selected_faces = faces[face_mask]  # still 1-based global indices
 
-        # Step 4: Remap face indices to local vertex indices
-        patch_faces = global_to_local[patch_faces_global]
+        # Step 3: Map global 1-based vertex index to local 1-based index
+        global_patch_ids = patch_vertex_indices + 1  # convert to 1-based
+        global_to_local = {int(g.item()): i + 1 for i, g in enumerate(global_patch_ids)}  # 1-based map
 
-        # Skip if patch is too small or has no face
-        if patch_vertices.size(0) >= 3 and patch_faces.size(0) > 0:
-            patches.append((patch_vertices, patch_faces))
+        remapped_faces = []
+        for face in selected_faces:
+            f0, f1, f2 = face.tolist()
+            if f0 in global_to_local and f1 in global_to_local and f2 in global_to_local:
+                remapped_faces.append([
+                    global_to_local[f0],
+                    global_to_local[f1],
+                    global_to_local[f2]
+                ])
+
+        if len(remapped_faces) == 0:
+            continue
+
+        patch_faces = torch.tensor(remapped_faces, dtype=torch.long)  # still 1-based
+        patches.append((patch_vertices, patch_faces))
 
     return patches
