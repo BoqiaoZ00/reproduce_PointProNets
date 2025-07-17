@@ -15,7 +15,7 @@ def main():
     patches = split_into_patches(X[0][0], X[0][1])
     print(len(patches))
     print(patches[0][0].shape) # patches[0] is the first patch, patches[0][0] is the vertices in this patch
-    Hgt, ngt = compute_gt_heightmap(patches[0][0], patches[0][1]) # try a patch (assume it's a bit patch)
+    Hgt, ngt = compute_gt_heightmap(patches[0][0], patches[0][1]) # try a patch
     print(Hgt.shape)
     print(ngt.shape)
 
