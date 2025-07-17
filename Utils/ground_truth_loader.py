@@ -1,4 +1,5 @@
 import torch
+import HeightmapGenerator as HGN
 from torch.nn.functional import normalize
 import numpy as np
 from collections import defaultdict
@@ -46,7 +47,7 @@ def compute_gt_heightmap(vertices, faces, n = None, k=32, r=1.0, sigma=1.0):
         sigma: std-dev of Gaussian kernel for interpolation
 
     Returns:
-        H_GT: (1, k, k) torch tensor
+        H_GT: (k, k) torch tensor
     """
     B = 1 # only for one patch
     device = vertices.device
@@ -57,6 +58,7 @@ def compute_gt_heightmap(vertices, faces, n = None, k=32, r=1.0, sigma=1.0):
         normals = compute_gt_normals(vertices, faces)
         n = torch.mean(normals, dim=0)
 
+    # Below is essentially just HGN projector with dimensional simplifications
     # 2. Choose random orthogonal d to n
     up = torch.tensor([0., 0., 1.], device=device)
     if torch.abs(torch.dot(n, up)) > 0.9:

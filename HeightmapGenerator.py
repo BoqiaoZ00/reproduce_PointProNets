@@ -27,7 +27,7 @@ def project_points_to_heightmap_exact(X, n, d=None, k=32, r=1.0, sigma=1.0):
         r: float - patch radius
         sigma: float - Gaussian std-dev for interpolation
     Returns:
-        HN: (B, 1, k, k) - heightmaps
+        HN: (B, k, k) - heightmaps
     """
     B, N, _ = X.shape
     device = X.device
