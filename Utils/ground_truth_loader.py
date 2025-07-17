@@ -33,13 +33,14 @@ def compute_gt_normals(vertices, faces):
     return normals
 
 
-def compute_gt_heightmap(vertices, faces, k=32, r=1.0, sigma=1.0):
+def compute_gt_heightmap(vertices, faces, n = None, k=32, r=1.0, sigma=1.0):
     """
     Generate ground truth heightmap from a clean patch.
 
     Args:
         vertices: (N, 3) torch tensor of point positions
         faces: (M, 3) torch tensor of triangle indices (1-based indices of vertices)
+        n: torch.Size([3])  The pre-computed global ground truth normal (ngt) for this patch (also for the whole item)
         k: grid size (heightmap will be k x k)
         r: radius offset (used to shift the projection plane)
         sigma: std-dev of Gaussian kernel for interpolation
@@ -51,9 +52,10 @@ def compute_gt_heightmap(vertices, faces, k=32, r=1.0, sigma=1.0):
     device = vertices.device
     N = vertices.shape[0]
 
-    # 1. Compute n_GT
-    normals = compute_gt_normals(vertices, faces)
-    n = torch.mean(normals, dim=0)
+    # 1. If no pre-computed global n_GT for the item, compute n_GT for this patch
+    if n is None:
+        normals = compute_gt_normals(vertices, faces)
+        n = torch.mean(normals, dim=0)
 
     # 2. Choose random orthogonal d to n
     up = torch.tensor([0., 0., 1.], device=device)
