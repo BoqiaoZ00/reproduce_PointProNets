@@ -3,13 +3,16 @@ import torch
 import os
 import torch
 
-def load(folder_path):
+def load(folder_path, device=None):
     """
     Load all .obj files in a folder, extracting vertex positions and face indices.
 
     Returns:
         meshes: list of tuples (vertices: (N, 3) torch.FloatTensor, faces: (M, 3) torch.LongTensor)
     """
+    if device is None:
+        device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+
     meshes = []
 
     for filename in os.listdir(folder_path):
@@ -29,8 +32,8 @@ def load(folder_path):
                         face = [int(p.split('/')[0]) for p in parts[1:4]]
                         faces.append(face)
 
-            vertices_tensor = torch.tensor(vertices, dtype=torch.float32)
-            faces_tensor = torch.tensor(faces, dtype=torch.long)
+            vertices_tensor = torch.tensor(vertices, dtype=torch.float32, device=device)
+            faces_tensor = torch.tensor(faces, dtype=torch.long, device=device)
             meshes.append((vertices_tensor, faces_tensor))
 
     return meshes

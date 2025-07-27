@@ -8,7 +8,10 @@ from Utils.patch_splitter import split_into_patches
 
 
 def main():
-    X = data_loader.load("./data")
+    print(torch.backends.mps.is_available())  # Should return True
+    print(torch.device('mps'))  # Should print 'mps' (M1/M2 GPU)
+
+    X = data_loader.load("./data", device=torch.device('cpu'))
     print(len(X)) # should be 4 (.obj files)
     print(len(X[0])) # should be 2 ([0] is vertices, [1] is faces)
     print(X[0][0].shape)
