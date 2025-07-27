@@ -5,7 +5,7 @@ import HeightmapGenerator as HGN
 import HeightmapDenoiser as HDN
 from Utils.ground_truth_loader import compute_gt_heightmap, compute_gt_normals
 from Utils.patch_splitter import split_into_patches
-
+from Utils.patch_viewer import visualize_patches
 
 def main():
     print(torch.backends.mps.is_available())  # Should return True
@@ -17,14 +17,18 @@ def main():
     print(X[0][0].shape)
     ngt = torch.mean(compute_gt_normals(X[0][0], X[0][1]), dim=0) # the global ngt for the first item
     print(ngt.shape)
-    patches = split_into_patches(X[0][0], X[0][1])
+    patches = split_into_patches(X[0][0], X[0][1], num_patches=200) # patches for the first item
     print(len(patches))
     print(patches[0][0].shape) # patches[0] is the first patch, patches[0][0] is the vertices in this patch
 
-    Hgt, ngt = compute_gt_heightmap(patches[0][0], patches[0][1], ngt) # try a patch with pre_computed ngt
-    # This ngt should be unchanged because it's pre_computed global ngt
-    print(Hgt.shape)
-    print(ngt.shape)
+    # Test viewer
+    point_patches = [v for v, _ in patches]
+    visualize_patches(point_patches)
+
+    # Hgt, ngt = compute_gt_heightmap(patches[0][0], patches[0][1], ngt) # try a patch with pre_computed ngt
+    # # This ngt should be unchanged because it's pre_computed global ngt
+    # print(Hgt.shape)
+    # print(ngt.shape)
 
     # test project_points_to_heightmap_exact
     # n = HGN.get_normal(X)
