@@ -16,12 +16,13 @@ def get_normal(X):
     return n
 
 
-def project_points_to_heightmap_exact(X, n, d=None, k=32, r=1.0, sigma=1.0):
+def project_points_to_heightmap_exact(patch_list, n, d=None, k=32, r=1.0, sigma=1.0):
     """
     Fully differentiable, paper-accurate projection to heightmap (Eq. 1–3).
+    patch_list can be multiple patches, but must come from one item (has the same n)
     Args:
-        X: (B, N, 3) - input points
-        n: (1, 3) - !unit! normal vectors
+        patch_list: list of torch.FloatTensor, each of shape (Ni, 3) - All patches from one item
+        n: torch.Size([3]) - !unit! normal vectors
         d: (B, 3) or None - in-plane direction (optional, will be generated if None)
         k: int - output image resolution
         r: float - patch radius
@@ -29,27 +30,16 @@ def project_points_to_heightmap_exact(X, n, d=None, k=32, r=1.0, sigma=1.0):
     Returns:
         HN: (B, k, k) - heightmaps
     """
-    B, N, _ = X.shape
-    device = X.device
+    B = len(patch_list)
+    device = patch_list[0].device
 
     # Step 1: Construct frame (d, c, n)
     if d is None:
-        up = torch.tensor([0, 0, 1.0], device=device).expand(B, 3)
-        parallel = (torch.abs((n * up).sum(dim=1)) > 0.9)
-        up[parallel] = torch.tensor([0, 1.0, 0], device=device)
-        d = F.normalize(torch.cross(up, n, dim=1), dim=1)
-    c = F.normalize(torch.cross(n, d, dim=1), dim=1)  # orthogonal vector
-
-    # Step 2: Project points onto plane
-    dot_xn = (X * n.unsqueeze(1)).sum(dim=2, keepdim=True)  # (B, N, 1)
-    P = X - (dot_xn + r) * n.unsqueeze(1)  # projected point on plane (B, N, 3)
-    D = torch.norm(X - P, dim=2)  # (B, N) distance from original point
-
-    # Step 3: Convert projected coords to image (Eq. 2)
-    pd = (P * d.unsqueeze(1)).sum(dim=2)  # (B, N)
-    pc = (P * c.unsqueeze(1)).sum(dim=2)  # (B, N)
-    i_x = ((pd + r) * (k / (2 * r))).clamp(0, k - 1)
-    i_y = ((pc + r) * (k / (2 * r))).clamp(0, k - 1)
+        up = torch.tensor([0, 0, 1.0], device=device)
+        if torch.abs((n * up).sum()) > 0.9:
+            up = torch.tensor([0, 1.0, 0], device=device)
+        d = F.normalize(torch.cross(up, n, dim=0), dim=0)
+    c = F.normalize(torch.cross(n, d, dim=0), dim=0)  # orthogonal vector
 
     # Step 4: Interpolate onto discrete grid using Equation (3)
     HN = torch.zeros((B, k, k), device=device)
@@ -64,21 +54,29 @@ def project_points_to_heightmap_exact(X, n, d=None, k=32, r=1.0, sigma=1.0):
     grid_coords = grid_coords.view(-1, 2)  # (k², 2)
     grid_coords = grid_coords.unsqueeze(0).expand(B, -1, -1)  # make B copies (B, k², 2)
 
-    for b in range(B):
-        # Get projected points for this batch
-        points_i = torch.stack([i_x, i_y], dim=1)  # (N, 2)
-        dist_vals = D  # (N,)
+    for b, X in enumerate(patch_list):
+        Nb = X.size(0)
+
+        # Project onto tangent plane at origin, push down by radius r
+        dot_xn = (X * n).sum(dim=1, keepdim=True)  # (N, 1)
+        P = X - (dot_xn + r) * n.unsqueeze(0)  # projected point on plane (N, 3)
+        D = torch.norm(X - P, dim=1)  # (N, ) distance from original point
+
+        # Convert projected coords to image (Eq. 2)
+        pd = (P * d).sum(dim=1)  # (B, N)
+        pc = (P * c).sum(dim=1)  # (B, N)
+        i_x = ((pd + r) * (k / (2 * r))).clamp(0, k - 1)
+        i_y = ((pc + r) * (k / (2 * r))).clamp(0, k - 1)
 
         # For each projected point, compute Gaussian-weighted sum to surrounding pixels
-        for p_idx in range(points_i.size(0)):
-            pi = points_i[p_idx]  # (2,)
-            val = dist_vals[p_idx]  # scalar
+        for p_idx in range(Nb):
+            pi = torch.stack([i_x[p_idx], i_y[p_idx]])  # (2,)
+            val = D[p_idx]  # scalar
 
             # Compute distance to all pixel centers
             dists = torch.norm(grid_coords[b] - pi.unsqueeze(0), dim=1)  # (k²,)
             mask = dists < 3 * sigma  # restrict to nearby pixels (here we assume delta = 3*sigma)
-            dists = dists[mask]
-            grid_i = grid_coords[b][mask]  # (M, 2) all M pixel centers that have Gaussian influence on the point pi
+            grid_i = grid_coords[b][mask] # (M, 2) all M pixel centers that have Gaussian influence on the point pi
 
             weights = torch.exp(-(dists ** 2) / sigma ** 2)  # (M,)
             gx = grid_i[:, 0].long().clamp(0, k - 1)

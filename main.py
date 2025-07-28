@@ -17,22 +17,25 @@ def main():
     print(X[0][0].shape)
     ngt = torch.mean(compute_gt_normals(X[0][0], X[0][1]), dim=0) # the global ngt for the first item
     print(ngt.shape)
-    patches = split_into_patches(X[0][0], X[0][1], num_patches=200) # patches for the first item
+    patches = split_into_patches(X[0][0], X[0][1], num_patches=5) # patches for the first item
     print(len(patches))
     print(patches[0][0].shape) # patches[0] is the first patch, patches[0][0] is the vertices in this patch
 
     # Test viewer
-    point_patches = [v for v, _ in patches]
-    visualize_patches(point_patches)
+    # point_patches = [v for v, _ in patches]
+    # visualize_patches(point_patches)
 
+    # Test ground_truth_loader.compute_gt_heightmap
     # Hgt, ngt = compute_gt_heightmap(patches[0][0], patches[0][1], ngt) # try a patch with pre_computed ngt
     # # This ngt should be unchanged because it's pre_computed global ngt
     # print(Hgt.shape)
     # print(ngt.shape)
 
-    # test project_points_to_heightmap_exact
-    # n = HGN.get_normal(X)
-    # HGN.project_points_to_heightmap_exact(X, n)
+    # test HeightmapGenerator.project_points_to_heightmap_exact
+    point_patches = [v for v, _ in patches]
+    heightmaps = HGN.project_points_to_heightmap_exact(point_patches, ngt)
+    print(len(heightmaps))
+    print(heightmaps[0].shape)
 
     # Training Process
     # Step 1: get Ygt, Hgt, ngt as above (randomly choose +- for ngt)
