@@ -16,14 +16,14 @@ def get_normal(X):
     return n
 
 
-def project_points_to_heightmap_exact(patch_list, n, d=None, k=32, r=1.0, sigma=1.0):
+def project_points_to_heightmap_exact(patch_list, normals, d_list=None, k=32, r=1.0, sigma=1.0):
     """
     Fully differentiable, paper-accurate projection to heightmap (Eq. 1–3).
     patch_list can be multiple patches, but must come from one item (has the same n)
     Args:
         patch_list: list of torch.FloatTensor, each of shape (Ni, 3) - All patches from one item
-        n: torch.Size([3]) - !unit! normal vectors
-        d: (B, 3) or None - in-plane direction (optional, will be generated if None)
+        normals: list or tensor [list shape (B, 3)] - one unit normal vector per patch
+        d_list: List [list shape (B, 3)] or None - in-plane direction (optional, will be generated if None)
         k: int - output image resolution
         r: float - patch radius
         sigma: float - Gaussian std-dev for interpolation
@@ -32,14 +32,6 @@ def project_points_to_heightmap_exact(patch_list, n, d=None, k=32, r=1.0, sigma=
     """
     B = len(patch_list)
     device = patch_list[0].device
-
-    # Step 1: Construct frame (d, c, n)
-    if d is None:
-        up = torch.tensor([0, 0, 1.0], device=device)
-        if torch.abs((n * up).sum()) > 0.9:
-            up = torch.tensor([0, 1.0, 0], device=device)
-        d = F.normalize(torch.cross(up, n, dim=0), dim=0)
-    c = F.normalize(torch.cross(n, d, dim=0), dim=0)  # orthogonal vector
 
     # Step 2: Interpolate onto discrete grid (Eq.3 setup)
     HN = torch.zeros((B, k, k), device=device)
@@ -55,6 +47,17 @@ def project_points_to_heightmap_exact(patch_list, n, d=None, k=32, r=1.0, sigma=
     grid_coords = grid_coords.unsqueeze(0).expand(B, -1, -1)  # make B copies (B, k², 2)
 
     for b, X in enumerate(patch_list):
+        # Step 1: Construct frame (d, c, n)
+        n = normals[b]
+        if d_list is None or d_list[b] is None:
+            up = torch.tensor([0, 0, 1.0], device=device)
+            if torch.abs((n * up).sum()) > 0.9:
+                up = torch.tensor([0, 1.0, 0], device=device)
+            d = F.normalize(torch.cross(up, n, dim=0), dim=0)
+        else:
+            d = d_list[b].to(device)
+        c = F.normalize(torch.cross(n, d, dim=0), dim=0)  # orthogonal vector
+
         Nb = X.size(0)
 
         # Project onto tangent plane at origin, push down by radius r (Eq. 1)
@@ -84,8 +87,13 @@ def project_points_to_heightmap_exact(patch_list, n, d=None, k=32, r=1.0, sigma=
             gy = grid_i[:, 1].long().clamp(0, k - 1)
 
             for idx in range(len(gx)):
-                HN[b, gx[idx], gy[idx]] += weights[idx] * val
+                # print(weights[idx])
+                # print(val)
+                # print(HN[b, gx[idx], gy[idx]])
+                HN[b, gx[idx], gy[idx]] += (weights[idx] * val)
+                # print(HN[b, gx[idx], gy[idx]])
                 W[b, gx[idx], gy[idx]] += weights[idx]
+                # print(W[b, gx[idx], gy[idx]])
 
     # Safe division
     result = torch.where(W != 0, HN / W, torch.zeros_like(HN))

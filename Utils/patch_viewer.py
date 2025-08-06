@@ -33,3 +33,23 @@ def visualize_patches(patch_vertices, colorize=True):
 
     # Visualize all point clouds together
     o3d.visualization.draw_geometries(geometries)
+
+
+def visualize_heightmap(heightmap, title='Heightmap'):
+    """
+    Visualize a single heightmap tensor (2D) as a grayscale image.
+
+    Args:
+        heightmap: torch.Tensor or numpy.ndarray of shape (k, k)
+        title: Optional string for plot title
+    """
+    if isinstance(heightmap, torch.Tensor):
+        heightmap = heightmap.detach().cpu().numpy()
+
+    plt.figure(figsize=(5, 5))
+    plt.imshow(heightmap, cmap='gray', origin='lower')
+    plt.title(title)
+    plt.colorbar(label='Height')
+    plt.axis('off')
+    plt.tight_layout()
+    plt.show()
