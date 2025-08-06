@@ -65,13 +65,23 @@ def main():
     # ])  # shape: (3, 3)
     # ngt = torch.tensor([0.0, 0.0, 1.0])
 
-    # 3. Project all patches to heightmaps (batched)
-    heightmaps = HGN.project_points_to_heightmap_exact(
+    # 3. Project all patches to heightmaps (patched)
+    heightmap_list = HGN.project_points_to_heightmap_exact(
         patch_list=vertices_list,
         normals=normals_list,
         r=10.0  # or any r you want
     )
-    for i, hmap in enumerate(heightmaps):
+    for i, hmap in enumerate(heightmap_list):
+        visualize_heightmap(hmap, title=f'Patch {i}')
+
+    # OR as below
+    heightmap_list = []
+    for verts, faces in zip(vertices_list, faces_list):
+        # Compute per-face normals and average to get patch-level normal
+        heightmap,_ = compute_gt_heightmap(verts, faces, r=10.0)
+        heightmap_list.append(heightmap)
+
+    for i, hmap in enumerate(heightmap_list):
         visualize_heightmap(hmap, title=f'Patch {i}')
 
     # Training Process

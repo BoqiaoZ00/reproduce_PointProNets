@@ -3,7 +3,7 @@ import HeightmapGenerator as HGN
 from torch.nn.functional import normalize
 import numpy as np
 from collections import defaultdict
-
+import torch.nn.functional as F
 
 def compute_gt_normals(vertices, faces):
     """
@@ -57,6 +57,7 @@ def compute_gt_heightmap(vertices, faces, n = None, k=32, r=1.0, sigma=1.0):
     if n is None:
         normals = compute_gt_normals(vertices, faces)
         n = torch.mean(normals, dim=0)
+        n = F.normalize(n, dim=0)
 
     # Below is essentially just HGN projector with dimensional simplifications
     # 2. Choose random orthogonal d to n
@@ -73,8 +74,8 @@ def compute_gt_heightmap(vertices, faces, n = None, k=32, r=1.0, sigma=1.0):
     # 4. Image coordinates
     pd = (p @ d) + r  # (N,)
     pc = (p @ c) + r
-    i_x = (pd * k / (2 * r)).long().clamp(0, k - 1)
-    i_y = (pc * k / (2 * r)).long().clamp(0, k - 1)
+    i_x = (pd * k / (2 * r)).clamp(0, k - 1)
+    i_y = (pc * k / (2 * r)).clamp(0, k - 1)
 
     # 5. Heights (distance from original point to projection)
     D = torch.norm(vertices - p, dim=1)  # (N,)
