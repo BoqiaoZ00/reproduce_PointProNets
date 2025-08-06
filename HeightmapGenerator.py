@@ -41,7 +41,7 @@ def project_points_to_heightmap_exact(patch_list, n, d=None, k=32, r=1.0, sigma=
         d = F.normalize(torch.cross(up, n, dim=0), dim=0)
     c = F.normalize(torch.cross(n, d, dim=0), dim=0)  # orthogonal vector
 
-    # Step 4: Interpolate onto discrete grid using Equation (3)
+    # Step 2: Interpolate onto discrete grid (Eq.3 setup)
     HN = torch.zeros((B, k, k), device=device)
     W = torch.zeros((B, k, k), device=device)
 
@@ -57,7 +57,7 @@ def project_points_to_heightmap_exact(patch_list, n, d=None, k=32, r=1.0, sigma=
     for b, X in enumerate(patch_list):
         Nb = X.size(0)
 
-        # Project onto tangent plane at origin, push down by radius r
+        # Project onto tangent plane at origin, push down by radius r (Eq. 1)
         dot_xn = (X * n).sum(dim=1, keepdim=True)  # (N, 1)
         P = X - (dot_xn + r) * n.unsqueeze(0)  # projected point on plane (N, 3)
         D = torch.norm(X - P, dim=1)  # (N, ) distance from original point
@@ -70,12 +70,13 @@ def project_points_to_heightmap_exact(patch_list, n, d=None, k=32, r=1.0, sigma=
 
         # For each projected point, compute Gaussian-weighted sum to surrounding pixels
         for p_idx in range(Nb):
-            pi = torch.stack([i_x[p_idx], i_y[p_idx]])  # (2,)
-            val = D[p_idx]  # scalar
+            pi = torch.stack([i_x[p_idx], i_y[p_idx]])  # (2,) The 2D coordinates of this points
+            val = D[p_idx]  # scalar - The distance of this points
 
             # Compute distance to all pixel centers
             dists = torch.norm(grid_coords[b] - pi.unsqueeze(0), dim=1)  # (k²,)
             mask = dists < 3 * sigma  # restrict to nearby pixels (here we assume delta = 3*sigma)
+            dists = dists[mask]
             grid_i = grid_coords[b][mask] # (M, 2) all M pixel centers that have Gaussian influence on the point pi
 
             weights = torch.exp(-(dists ** 2) / sigma ** 2)  # (M,)
