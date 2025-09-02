@@ -22,9 +22,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import rotate
 
-from HeightmapDenoiser import TrivialEquivariantDenoiser
+from HeightmapDenoiser import TrivialEquivariantDenoiser, AdvancedEquivariantDenoiser
 from Utils.dummy_heightmap_dataset import DummyHeightmapDataset
-from tests.test_equivariance import test_and_plot_equivariance_from_dataset
+from tests.test_equivariance import test_and_plot_rotation_equivariance_from_dataset, \
+    test_flip_equivariance_comprehensive
 
 
 def run_test(model_path, in_channels, num_layers, num_feat):
@@ -42,12 +43,12 @@ def run_test(model_path, in_channels, num_layers, num_feat):
             new_state_dict[k] = v  # In case there are other keys
 
     # 3. Load into your model
-    model = TrivialEquivariantDenoiser(in_channels=in_channels, num_layers=num_layers, num_feat=num_feat)
+    model = AdvancedEquivariantDenoiser(in_channels=in_channels, num_layers=num_layers, num_feat=num_feat)
     model.load_state_dict(new_state_dict)
     model.eval()
 
     # 4. Prepare test data
-    test_ds = DummyHeightmapDataset(num_samples=100, k=64, noise_std=0.08, seed=666)
+    test_ds = DummyHeightmapDataset(num_samples=100, k=64, noise_std=0.18, seed=345)
     test_loader = DataLoader(test_ds, batch_size=32, shuffle=False)
 
     import torch
@@ -124,4 +125,5 @@ def run_test(model_path, in_channels, num_layers, num_feat):
 
 
     evaluate(model, test_loader)
-    test_and_plot_equivariance_from_dataset(model, DummyHeightmapDataset)
+    test_and_plot_rotation_equivariance_from_dataset(model, DummyHeightmapDataset)
+    test_flip_equivariance_comprehensive(model, DummyHeightmapDataset)

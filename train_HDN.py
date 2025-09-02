@@ -22,7 +22,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 from tests.test_performance import run_test
 
-MAX_EPOCHS = 100
+MAX_EPOCHS = 50
 
 class PointProNetDenoise(L.LightningModule):
     """
@@ -260,12 +260,12 @@ class PointProNetDenoise(L.LightningModule):
         if self.mode != "denoising":
             raise ValueError(f"Mode not implemented: {self.mode}")
 
-        heightmap_gt, heightmap_noised, _ = batch
+        heightmap_gt, heightmap_noised, _, _, _ = batch
 
         # Forward pass with anomaly detection
         try:
             pred = self(heightmap_noised)
-            loss, loss_dict  = self.compute_denoising_loss(heightmap_gt, pred, heightmap_noised)
+            loss, loss_dict  = self.compute_denoising_loss(heightmap_gt, pred)
             # Verify loss has gradients
             if not loss.requires_grad:
                 print("WARNING: In the training_step, loss tensor doesn't require gradients!")
@@ -319,12 +319,12 @@ class PointProNetDenoise(L.LightningModule):
         if self.mode != "denoising":
             raise ValueError(f"Invalid mode: {self.mode}")
 
-        heightmap_gt, heightmap_noised, _ = batch
+        heightmap_gt, heightmap_noised, _, _, _ = batch
 
         with torch.no_grad():
             try:
                 pred = self(heightmap_noised)
-                loss, loss_dict = self.compute_denoising_loss(heightmap_gt, pred, heightmap_noised)
+                loss, loss_dict = self.compute_denoising_loss(heightmap_gt, pred)
             except RuntimeError as e:
                 print(f"Validation error: {e}")
                 return None
@@ -474,7 +474,7 @@ def run_denoising_training(
     # denoiser = HDN.AdvancedEquivariantDenoiser(
     #     in_channels=1, num_layers=20, num_feat=128,
     #     max_frequency=1, stability_ratio=0.5)
-    denoiser = HDN.TrivialEquivariantDenoiser(num_layers=10, num_feat=128)
+    denoiser = HDN.AdvancedEquivariantDenoiser(num_layers=10, num_feat=168)
     model = PointProNetDenoise(
         denoising_model=denoiser,
         lr=lr,
@@ -507,7 +507,7 @@ def run_denoising_training(
 
     # Checkpoint callback (saves to Wandb too with log_model=True)
     checkpoint_callback = ModelCheckpoint(
-        dirpath="checkpoints/denoising",
+        dirpath="checkpoints/denoising/advanced-10-168",
         filename="best-model-{epoch:02d}-{val_loss:.4f}",
         monitor="val_loss",
         mode="min",
@@ -551,7 +551,7 @@ if __name__ == "__main__":
         noise_std=0.08,
         max_epochs=MAX_EPOCHS,
         num_workers=4,
-        lr=5e-3,
+        lr=1e-2,
         visualize=True,
         visualize_every_n=10,  # Log images every 10 steps
         num_images_to_log=5,  # Log 5 example images each time
@@ -560,6 +560,6 @@ if __name__ == "__main__":
         val_samples = 200,
         # Wandb specific settings
         project_name="heightmap-denoising",
-        experiment_name="equi-L2+ssim+grad-100epoch",
+        experiment_name="advanced-10-168-equi-L2+ssim+grad-10-168",
         wandb_tags=["denoising", "heightmap", "equivariance"],
     )
