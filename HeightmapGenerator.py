@@ -129,6 +129,8 @@ def project_points_to_heightmap_exact(
             helper = torch.tensor([0.0, 0.0, 1.0], device=device, dtype=dtype)
             # If n ~ [0,0,1], this helper is collinear; blend with [0,1,0] smoothly
             alt = torch.tensor([0.0, 1.0, 0.0], device=device, dtype=dtype)
+            print(n.shape)
+            print(helper.shape)
             t = torch.clamp(n.abs().dot(helper), 0, 1)  # scalar in [0,1]
             base = F.normalize((1 - t) * helper + t * alt, dim=0)
             d_raw = base
@@ -140,12 +142,15 @@ def project_points_to_heightmap_exact(
         d = F.normalize(d, dim=0)
 
         # c completes the right-handed frame
-        c = F.normalize(torch.linalg.cross(n, d), dim=0)
+        c = F.normalize(torch.linalg.cross(d, n), dim=0)
 
         # --- Project to plane offset by -r along n ---
         dot_xn = (X * n).sum(dim=1, keepdim=True)        # (N,1)
         P = X - (dot_xn + r) * n.unsqueeze(0)            # (N,3)
         D = torch.norm(X - P, dim=1)                     # (N,)
+
+        # Debug Use only
+        # D = X[:, 2]  # heights directly from z-coordinate
 
         # --- Map to image coordinates ---
         pd = (P * d).sum(dim=1)                          # (N,)
