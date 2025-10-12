@@ -187,33 +187,33 @@ def main():
         ax.set_box_aspect([1, 1, 1])
         plt.show()
 
-    input_dir = "./data"
-    output_dir = "./data_normalized"
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-    # Load all meshes
-    meshes = data_loader.load(input_dir, device=torch.device("cpu"))
-    print(f"Loaded {len(meshes)} meshes")
-
-    for i, (vertices, faces) in enumerate(meshes):
-        norm_faces = faces
-        norm_vertices, params = normalize_mesh(vertices, method="unit_cube")
-
-        filename = f"mesh_{i:03d}.obj"
-        filepath = Path(output_dir) / filename
-        save_obj(norm_vertices, norm_faces, filepath)
-
-        print(f"Saved {filename} with {norm_vertices.shape[0]} verts, {norm_faces.shape[0]} faces")
-        # visualize_mesh(vertices, faces, title="Mesh")
-
-    print(f"\nAll normalized meshes saved to {output_dir}")
+    # input_dir = "./data"
+    # output_dir = "./data_normalized"
+    # Path(output_dir).mkdir(parents=True, exist_ok=True)
+    #
+    # # Load all meshes
+    # meshes = data_loader.load(input_dir, device=torch.device("cpu"))
+    # print(f"Loaded {len(meshes)} meshes")
+    #
+    # for i, (vertices, faces) in enumerate(meshes):
+    #     norm_faces = faces
+    #     norm_vertices, params = normalize_mesh(vertices, method="unit_cube")
+    #
+    #     filename = f"mesh_{i:03d}.obj"
+    #     filepath = Path(output_dir) / filename
+    #     save_obj(norm_vertices, norm_faces, filepath)
+    #
+    #     print(f"Saved {filename} with {norm_vertices.shape[0]} verts, {norm_faces.shape[0]} faces")
+    #     # visualize_mesh(vertices, faces, title="Mesh")
+    #
+    # print(f"\nAll normalized meshes saved to {output_dir}")
 
     norm_folder = "./data_normalized"
     norm_meshes =  data_loader.load(norm_folder, device=torch.device("cpu"))
     print(f"Loaded {len(norm_meshes)} normalized meshes")
 
-    alligator = norm_meshes[1]
-    norm_vertices, norm_faces = alligator[0], alligator[1]
+    armadillo = norm_meshes[1]
+    norm_vertices, norm_faces = armadillo[0], armadillo[1]
     patch_lists = split_into_patches(norm_vertices, norm_faces, num_patches=500, patch_radius=0.1)
     patch_vertices = [patch[0] for patch in patch_lists]
     patch_faces = [patch[1] for patch in patch_lists]
@@ -224,18 +224,11 @@ def main():
 
     visualize_patch_with_normal(patch_vertices[0], normal_per_patch)
 
-    HN = project_points_to_heightmap_exact([patch_vertices[0]], [normal_per_patch], r=0.2)
-    plot_heightmap_2d(HN[0])
-    HN = project_points_to_heightmap_exact([patch_vertices[0]], [normal_per_patch], r=0.4)
+
+    HN = HGN.project_points_to_heightmap_test([patch_vertices[0]], [normal_per_patch], r=0.075)
     plot_heightmap_2d(HN[0])
 
-    HN = project_points_to_heightmap_exact([patch_vertices[0]], [normal_per_patch], r=0.1)
-    plot_heightmap_2d(HN[0])
 
-    HN = project_points_to_heightmap_exact([patch_vertices[0]], [normal_per_patch], r=0.05)
-    plot_heightmap_2d(HN[0])
-    HN = project_points_to_heightmap_exact([patch_vertices[0]], [normal_per_patch], r=0.005)
-    plot_heightmap_2d(HN[0])
 
 
 if __name__ == "__main__":

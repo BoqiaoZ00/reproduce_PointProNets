@@ -169,7 +169,7 @@ def project_points_to_heightmap_exact(
         weights = torch.exp(-dists_sq / (sigma ** 2))    # (N,k,k)
 
         # Optional soft cutoff (keeps differentiability)
-        thr2 = (3.0 * sigma) ** 2
+        thr2 = (2.0 * sigma) ** 2
         soft = torch.sigmoid(10.0 * (thr2 - dists_sq))
         weights = weights * soft
 
@@ -182,6 +182,98 @@ def project_points_to_heightmap_exact(
 
     HN = torch.stack(HN_list, dim=0)                     # (B,k,k)
     return HN
+
+def project_points_to_heightmap_test(patch_list, normals, d_list=None,
+                                      k=32, r=None, sigma=None, eps=1e-8):
+    """
+    Fully differentiable projection to a k×k heightmap using Gaussian interpolation
+    at pixel centers. Chooses a per-patch r if None; sigma is in *pixel* units.
+    """
+    B = len(patch_list)
+    device = patch_list[0].device
+    dtype = patch_list[0].dtype
+
+    # pixel-center grid: 0..k-1 are pixel centers
+    iy, ix = torch.meshgrid(
+        torch.arange(k, device=device, dtype=dtype),
+        torch.arange(k, device=device, dtype=dtype),
+        indexing='ij'
+    )
+    grid = torch.stack([ix, iy], dim=-1)  # (k, k, 2)
+
+    HN_list = []
+    for b, X in enumerate(patch_list):
+        n = F.normalize(normals[b], dim=0)
+
+        # Orthonormal frame (d, c, n) – stable construction
+        if d_list is None or d_list[b] is None:
+            a = torch.tensor([1., 0., 0.], device=device, dtype=dtype)
+            if torch.allclose((a @ n).abs(), torch.tensor(1., device=device, dtype=dtype), atol=1e-3):
+                a = torch.tensor([0., 1., 0.], device=device, dtype=dtype)
+            c = F.normalize(torch.cross(n, a), dim=0)
+            d = F.normalize(torch.cross(c, n), dim=0)
+        else:
+            d_raw = d_list[b].to(device=device, dtype=dtype)
+            d = F.normalize(d_raw - (d_raw * n).sum() * n, dim=0)
+            c = F.normalize(torch.cross(n, d), dim=0)
+
+        # Center patch so coordinates are relative to its centroid
+        Xc = X - X.mean(dim=0, keepdim=True)
+
+        # Project to plane offset by -r*n (we’ll decide r adaptively if None)
+        dot_xn = (Xc * n).sum(dim=1, keepdim=True)       # (N,1)
+        # For adaptive r we first measure in-plane spread with r_temp=0
+        P0 = Xc - dot_xn * n.unsqueeze(0)                # (N,3), plane through origin
+        u0 = (P0 * d).sum(dim=1)                         # (N,)
+        v0 = (P0 * c).sum(dim=1)                         # (N,)
+
+        # Choose r to cover (u0,v0) with a little margin (98th percentile)
+        if r is None:
+            # robust radius in *world* units
+            r_u = torch.quantile(u0.abs(), 0.98).item()
+            r_v = torch.quantile(v0.abs(), 0.98).item()
+            r_use = 1.05 * max(r_u, r_v, 1e-6)
+        else:
+            r_use = float(r)
+
+        # Now use that r to define the offset plane and distances
+        P = Xc - (dot_xn + r_use) * n.unsqueeze(0)       # (N,3)
+        D = (Xc * n).sum(dim=1)
+        # D = (Xc * n).sum(dim=1) + r_use                  # signed distance; = ||X-P|| with sign
+
+        # Map to *pixel centers*: indices 0..k-1 are centers
+        scale = (k - 1) / (2.0 * r_use)
+        u = (P * d).sum(dim=1)                           # (N,)
+        v = (P * c).sum(dim=1)
+        ix_f = (u + r_use) * scale                       # float index x
+        iy_f = (v + r_use) * scale                       # float index y
+        pts = torch.stack([ix_f, iy_f], dim=1)           # (N,2) in pixel-index space
+
+        oob = ((ix_f < -1) | (ix_f > k) | (iy_f < -1) | (iy_f > k)).float().mean()
+        # print(f"r =  {r}")
+        # print(f"out-of-bounds frac: {oob:.8f}\n")
+
+        # Gaussian interpolation (σ in *pixels*)
+        sigma_px = float(sigma) if sigma is not None else 1.0
+        cutoff2 = (3.0 * sigma_px) ** 2
+
+        pc = pts[:, None, None, :]                       # (N,1,1,2)
+        gc = grid[None, :, :, :]                         # (1,k,k,2)
+        d2 = ((pc - gc) ** 2).sum(dim=-1)                # (N,k,k)
+
+        w = torch.exp(-d2 / (sigma_px ** 2))
+        # soft cutoff for speed/robustness
+        w = w * (d2 <= cutoff2).to(w.dtype)
+
+        num = (w * D[:, None, None]).sum(dim=0)          # (k,k)
+        den = w.sum(dim=0)                               # (k,k)
+        H = num / (den + eps)
+
+        # Fill pure-empty pixels with 0 (already happens via eps); keep values as-is
+        HN_list.append(H)
+
+    return torch.stack(HN_list, dim=0)
+
 
 
 class FrameEstimatorNet(nn.Module):

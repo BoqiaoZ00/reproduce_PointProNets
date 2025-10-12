@@ -222,8 +222,8 @@ def visualize_patch_with_normal(patch_vertices, normal_vector, patch_name="Patch
     fig.show()
 
     # Print some statistics
-    print(f"Patch Statistics:")
-    print(f"  Number of points: {len(points_np)}")
-    print(f"  Normal vector: [{normal_np[0]:.3f}, {normal_np[1]:.3f}, {normal_np[2]:.3f}]")
-    print(f"  Normal magnitude: {np.linalg.norm(normal_np):.3f}")
-    print(f"  Patch center: [{patch_center[0]:.3f}, {patch_center[1]:.3f}, {patch_center[2]:.3f}]")
+    # print(f"Patch Statistics:")
+    # print(f"  Number of points: {len(points_np)}")
+    # print(f"  Normal vector: [{normal_np[0]:.3f}, {normal_np[1]:.3f}, {normal_np[2]:.3f}]")
+    # print(f"  Normal magnitude: {np.linalg.norm(normal_np):.3f}")
+    # print(f"  Patch center: [{patch_center[0]:.3f}, {patch_center[1]:.3f}, {patch_center[2]:.3f}]")
