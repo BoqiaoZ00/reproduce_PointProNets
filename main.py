@@ -9,13 +9,16 @@ from PIL import Image
 import torch
 import torch.nn.functional as F
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from torch import Tensor
 
 import Utils.data_loader as data_loader
 import HeightmapGenerator as HGN
 import HeightmapDenoiser as HDN
 from HeightmapGenerator import project_points_to_heightmap_exact
+from Utils.data_loader import load_thimble
 from Utils.ground_truth_loader import compute_gt_heightmap, compute_gt_normals
-from Utils.patch_splitter import split_into_patches, split_into_patches_adaptive, split_into_patches_with_normals
+from Utils.patch_splitter import split_into_patches, split_into_patches_adaptive, split_into_patches_with_normals, \
+    split_thimble_into_patches
 from Utils.patch_viewer import visualize_heightmap, visualize_patches, visualize_patch_with_normal
 
 # def main():
@@ -116,6 +119,78 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+@torch.no_grad()
+def add_point_spikes_along_normal(
+    points: torch.Tensor,  # (P,3)
+    patch_normal: torch.Tensor,  # (3,)
+    *,
+    num_points: int = 30,
+    fixed_height: float = 5.0,  # fixed spike height in world units
+    seed: int = None,
+) -> torch.Tensor:
+    """
+    Make sparse 'obvious' outliers by moving random points along the patch normal.
+    Uses a fixed spike height instead of relative to patch z-range.
+    """
+    device, dtype = points.device, points.dtype
+    g = torch.Generator(device=device)
+    if seed is not None:
+        g.manual_seed(seed)
+
+    P = points.size(0)
+    if P == 0:
+        return points.clone()
+
+    # Normalize the patch normal
+    n = patch_normal / (patch_normal.norm() + 1e-8)
+
+    # Which points to spike?
+    take = min(num_points, P)
+    idx = torch.randperm(P, generator=g, device=device)[:take]
+
+    # Build spikes (± fixed_height, with small randomness)
+    rand_scale = 0.7 + 0.6 * torch.rand(take, generator=g, device=device)  # ~[0.7,1.3]
+    signs = torch.where(torch.rand(take, generator=g, device=device) < 0.5, -1.0, 1.0)
+    delta = fixed_height * rand_scale * signs  # (take,)
+
+    noisy = points.clone()
+    noisy[idx] = noisy[idx] + delta.unsqueeze(-1) * n  # move along the normal
+    return noisy
+
+
+@torch.no_grad()
+def add_small_isotropic_jitter(
+        points: torch.Tensor,
+        *,
+        sigma_rel_radius: float = 0.003,  # ~0.3% of patch radius (very mild)
+        patch_radius: float = 0.15,
+        seed: int = None,
+) -> torch.Tensor:
+    """
+    Optional gentle jitter on *all* points (simulates sensor noise).
+    """
+    device, dtype = points.device, points.dtype
+    sigma = sigma_rel_radius * patch_radius
+    g = torch.Generator(device=device)
+    if seed is not None:
+        g.manual_seed(seed)
+    try:
+        # Preferred: randn with explicit size supports generator broadly
+        noise = torch.randn(points.shape, device=device, dtype=dtype, generator=g) * sigma
+    except TypeError:
+        # Very old versions: fall back to manual seeding (global)
+        print("fall back to manual seeding (global)")
+        cpu = (device.type == "cpu")
+        prev_state = torch.random.get_rng_state()
+        if cpu:
+            torch.manual_seed(seed)
+        else:
+            torch.cuda.manual_seed_all(seed)
+        noise = torch.randn(points.shape, device=device, dtype=dtype) * sigma
+        # restore RNG state (best-effort; CPU-only shown)
+        torch.random.set_rng_state(prev_state)
+    return points + noise
+
 def plot_heightmap_2d(heightmap, title="Heightmap", cmap='viridis'):
     """
     Simple 2D heatmap visualization
@@ -127,6 +202,16 @@ def plot_heightmap_2d(heightmap, title="Heightmap", cmap='viridis'):
     plt.axis('off')
     plt.tight_layout()
     plt.show()
+
+from scipy.ndimage import gaussian_filter
+
+def smooth_heightmap_numpy(tensor: torch.Tensor, sigma: float = 1.0) -> torch.Tensor:
+    # Convert to NumPy
+    np_array = tensor.cpu().numpy()
+    # Apply Gaussian filter
+    smoothed_np = gaussian_filter(np_array, sigma=sigma)
+    # Convert back to torch
+    return torch.from_numpy(smoothed_np).to(tensor.device)
 
 
 def main():
@@ -208,27 +293,62 @@ def main():
     #
     # print(f"\nAll normalized meshes saved to {output_dir}")
 
-    norm_folder = "./data_normalized"
-    norm_meshes =  data_loader.load(norm_folder, device=torch.device("cpu"))
-    print(f"Loaded {len(norm_meshes)} normalized meshes")
+    # norm_folder = "./data"
+    # norm_meshes =  data_loader.load(norm_folder, device=torch.device("cpu"))
+    # print(f"Loaded {len(norm_meshes)} normalized meshes")
+    #
+    # armadillo = norm_meshes[14]
+    # norm_vertices, norm_faces = armadillo[0], armadillo[1]
+    # print(f"This object has {len(norm_vertices)} normalized vertices")
+    # patch_lists = split_into_patches(norm_vertices, norm_faces, num_patches=500, patch_radius=10)
+    # patch_vertices = [patch[0] for patch in patch_lists]
+    # patch_faces = [patch[1] for patch in patch_lists]
+    # visualize_patches(patch_vertices, colorize=True)
+    #
+    # normals = compute_gt_normals(patch_vertices[0], patch_faces[0])
+    # normal_per_patch = torch.mean(normals, dim=0)
+    #
+    # visualize_patch_with_normal(patch_vertices[0], normal_per_patch)
+    #
+    # # add random noise (20% height) to points
+    # patch_vertices_noisy = add_point_spikes_along_normal(
+    #     points = patch_vertices[0], patch_normal = normal_per_patch, num_points=30, fixed_height=5, seed=0
+    # )
+    # # patch_vertices_noisy = add_small_isotropic_jitter(patch_vertices_noisy, sigma_rel_radius=0.003, patch_radius=10, seed=0)
+    #
+    #
+    #
+    # HN_clean = HGN.project_points_to_heightmap_test([patch_vertices[0]], [normal_per_patch], r=12)
+    # plot_heightmap_2d(HN_clean[0])
+    #
+    # HN_clean_smooth = smooth_heightmap_numpy(HN_clean[0])
+    # plot_heightmap_2d(HN_clean_smooth)
+    #
+    # HN_clean = HGN.project_points_to_heightmap_test([patch_vertices_noisy], [normal_per_patch], r=12)
+    # plot_heightmap_2d(HN_clean[0])
 
-    armadillo = norm_meshes[1]
-    norm_vertices, norm_faces = armadillo[0], armadillo[1]
-    patch_lists = split_into_patches(norm_vertices, norm_faces, num_patches=500, patch_radius=0.1)
+
+    thimble_path = "glof_ball_sim_data/thimble_v+f.obj"
+    # --- Example Usage ---
+    vertices, normals = load_thimble(thimble_path)
+    print(f"Loaded {vertices.shape[0]} vertices and {normals.shape[0]} normals.")
+    print("Shapes:", vertices.shape, normals.shape)
+
+    patch_lists = split_thimble_into_patches(vertices, normals, num_patches=500, patch_radius=0.1)
     patch_vertices = [patch[0] for patch in patch_lists]
-    patch_faces = [patch[1] for patch in patch_lists]
-    visualize_patches(patch_vertices, colorize=True)
+    patch_normals = [patch[1] for patch in patch_lists]
+    # visualize_patches(patch_vertices, colorize=True)
 
-    normals = compute_gt_normals(patch_vertices[0], patch_faces[0])
-    normal_per_patch = torch.mean(normals, dim=0)
+    per_patch_normals_list = [torch.mean(normals_in_patch, dim=0) for normals_in_patch in patch_normals]
+    print(f"per_patch_normals_list: {len(per_patch_normals_list)}")
 
-    visualize_patch_with_normal(patch_vertices[0], normal_per_patch)
+    visualize_patch_with_normal(patch_vertices[0], per_patch_normals_list[0])
 
+    HN_clean = HGN.project_points_to_heightmap_test([patch_vertices[0]], [per_patch_normals_list[0]], r=0.1)
+    plot_heightmap_2d(HN_clean[0])
 
-    HN = HGN.project_points_to_heightmap_test([patch_vertices[0]], [normal_per_patch], r=0.075)
-    plot_heightmap_2d(HN[0])
-
-
+    HN_clean_smooth = smooth_heightmap_numpy(HN_clean[0])
+    plot_heightmap_2d(HN_clean_smooth)
 
 
 if __name__ == "__main__":

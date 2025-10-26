@@ -17,7 +17,7 @@ import wandb
 
 from Utils import data_loader
 from Utils.ground_truth_loader import compute_gt_normals
-from Utils.patch_splitter import split_into_patches
+from Utils.patch_splitter import split_into_patches, split_thimble_into_patches
 from main import smooth_heightmap_numpy, plot_heightmap_2d
 from tests.test_equivariance import *
 import torchvision.transforms.functional as TF
@@ -33,7 +33,7 @@ import numpy as np
 # - HGN.project_points_to_heightmap_test(list_of_vertices, list_of_normals, r) -> List[Tensor(k, k)]
 # If your signatures differ slightly, tweak in the obvious places below.
 
-class RealPatchHeightmapDataset(Dataset):
+class ThimblePatchHeightmapDataset(Dataset):
     """
     Real-data heightmap dataset built from mesh patches.
 
@@ -55,7 +55,7 @@ class RealPatchHeightmapDataset(Dataset):
 
     def __init__(
         self,
-        norm_folder: str,
+        data_path: str = "glof_ball_sim_data/thimble_v+f.obj",
         device: torch.device = torch.device("cpu"),
         k: int = 64,
         r: float = 0.1,
@@ -79,29 +79,30 @@ class RealPatchHeightmapDataset(Dataset):
         self.device = device
 
         # load meshes
-        self.norm_meshes = data_loader.load(norm_folder, device=device)
-        if len(self.norm_meshes) == 0:
-            raise RuntimeError(f"No .obj file found in {norm_folder}")
-        self.norm_meshes = [self.norm_meshes[14]] # only use armadillo for simple runs
+        self.norm_meshes = data_loader.load_thimble(data_path, device=device)
+        print(len(self.norm_meshes[0]))
+        print(len(self.norm_meshes[1]))
+        # self.norm_meshes = [self.norm_meshes[14]] # only use armadillo for simple runs
 
         # prepare patch index: a flat list of (mesh_idx, patch_idx)
-        self._patches: List[Tuple[int, int]] = []
+        self._patches: List[int] = []
         self._patch_vertices: List[torch.Tensor] = []
-        self._patch_faces: List[torch.Tensor] = []
+        self._patch_normals: List[torch.Tensor] = []
 
-        for mi, (verts, faces) in enumerate(self.norm_meshes):
-            patch_lists = split_into_patches(
-                verts, faces,
-                num_patches=num_patches_per_mesh,
-                patch_radius=patch_radius
-            )
-            # patch_lists: List[(patch_vertices, patch_faces)]
-            for pi, (pverts, pfaces) in enumerate(patch_lists):
-                if pverts is None or len(pverts) == 0:
-                    continue
-                self._patches.append((mi, pi))
-                self._patch_vertices.append(pverts)  # (P, 3)
-                self._patch_faces.append(pfaces)     # (F, 3)
+        verts = self.norm_meshes[0]
+        normals = self.norm_meshes[1]
+        patch_lists = split_thimble_into_patches(
+            verts, normals,
+            num_patches=num_patches_per_mesh,
+            patch_radius=patch_radius
+        )
+        # patch_lists: List[(patch_vertices, patch_normals)]
+        for pi, (pverts, pnormals) in enumerate(patch_lists):
+            if pverts is None or len(pverts) == 0:
+                continue
+            self._patches.append(pi)
+            self._patch_vertices.append(pverts)  # (P, 3)
+            self._patch_normals.append(pnormals)     # (F, 3)
 
         if len(self._patches) == 0:
             raise RuntimeError("No patches were produced. Check split_into_patches settings.")
@@ -121,18 +122,13 @@ class RealPatchHeightmapDataset(Dataset):
 
     def __getitem__(self, idx: int):
         pverts = self._patch_vertices[idx]  # tensor (P, 3), device may be cpu
-        pfaces = self._patch_faces[idx]     # tensor (F, 3)
+        pnormals = self._patch_normals[idx]     # tensor (F, 3)
 
         # Ensure on CPU for HGN if needed (or same device as HGN expects)
         pverts_cpu = pverts.detach().cpu()
-        pfaces_cpu = pfaces.detach().cpu()
+        pnormals_cpu = pnormals.detach().cpu()
 
-        # Compute per-vertex (or per-face) normals and average to a single dominant normal
-        # If your compute_gt_normals returns per-vertex normals shaped (P, 3):
-        per_vtx_normals = compute_gt_normals(pverts_cpu, pfaces_cpu)  # (P, 3)
-        # print("shape of gt_normal_per_pixel (per_vtx_normals):", per_vtx_normals.shape)
-        patch_normal = per_vtx_normals.mean(dim=0)
-        # print("shape of patch_normal (patch_normal):", patch_normal.shape)
+        patch_normal = pnormals_cpu.mean(dim=0)
 
         # Project patch to heightmap (expects lists)
         clean_heightmaps: List[torch.Tensor] = HGN.project_points_to_heightmap_test(
@@ -771,12 +767,12 @@ def run_denoising_training(
     L.seed_everything(seed, workers=True)
 
     # Datasets & loaders
-    train_ds = RealPatchHeightmapDataset(
-        norm_folder="./data",
+    train_ds = ThimblePatchHeightmapDataset(
+        data_path="glof_ball_sim_data/thimble_v+f.obj",
         k=32,              # must match what HGN projector returns
-        r=10,            # projection radius
-        num_patches_per_mesh=500,
-        patch_radius=10,
+        r=0.1,            # projection radius
+        num_patches_per_mesh=2000,
+        patch_radius=0.1,
         subsample_points=100,
         noise_std=0.05,    # set to 0.0 if you want the "noisy" = "clean"
         seed=seed
@@ -784,12 +780,12 @@ def run_denoising_training(
 
     print("Total training data patches:", len(train_ds))
 
-    val_ds = RealPatchHeightmapDataset(
-        norm_folder="./data",
+    val_ds = ThimblePatchHeightmapDataset(
+        data_path="glof_ball_sim_data/thimble_v+f.obj",
         k=32,  # must match what HGN projector returns
-        r=10,  # your projection radius
+        r=0.1,  # your projection radius
         num_patches_per_mesh=100,
-        patch_radius=10,
+        patch_radius=0.1,
         subsample_points=100,
         noise_std=0.05,  # set to 0.0 if you want the "noisy" = "clean"
         seed=seed
@@ -907,7 +903,7 @@ if __name__ == "__main__":
 
         # Wandb specific settings
         project_name="heightmap-denoising",
-        experiment_name="advanced-10-128-equi-L2-ssim-grad",
+        experiment_name="advanced-10-128-chimble-L2-ssim-grad",
         wandb_tags=["denoising", "heightmap", "equivariance", "faces"],
     )
 

@@ -60,6 +60,52 @@ def split_into_patches(vertices, faces, num_patches=3, patch_radius=0.05):
     return patches
 
 
+def split_thimble_into_patches(vertices, normals, num_patches, patch_radius):
+    """
+    Splits the full point cloud (vertices + normals) into local patches.
+
+    Args:
+        vertices: (N, 3) torch.FloatTensor of vertex positions
+        normals: (N, 3) torch.FloatTensor of per-vertex normals
+        num_patches: int, number of patches to sample
+        patch_radius: float, radius for each patch
+
+    Returns:
+        patch_list: list of tuples (patch_vertices, patch_normals)
+            - patch_vertices: (P, 3) torch.FloatTensor
+            - patch_normals: (P, 3) torch.FloatTensor
+    """
+    N = vertices.shape[0]
+    if N == 0:
+        return []
+
+    patches = []
+
+    # Randomly sample patch centers
+    # Use randperm on the device of the tensors to avoid CPU-GPU sync
+    indices = torch.randperm(N, device=vertices.device)[:num_patches]
+    centers = vertices[indices]
+
+    for center in centers:
+        # Step 1: Find vertices within radius
+        # (N, 3) vertices - (1, 3) center -> (N, 3) distances
+        distances = torch.norm(vertices - center, dim=1)
+        mask = distances < patch_radius
+
+        # Get the 0-based indices of all points in the patch
+        patch_vertex_indices = torch.nonzero(mask).squeeze(1)
+
+        if patch_vertex_indices.numel() == 0:
+            continue  # skip empty patch
+
+        # Step 2: Grab the vertices and normals using the indices
+        patch_vertices = vertices[patch_vertex_indices]
+        patch_normals = normals[patch_vertex_indices]
+
+        patches.append((patch_vertices, patch_normals))
+
+    return patches
+
 def split_into_patches_adaptive(vertices, faces, num_patches=3, target_points_per_patch=1000):
     """
     Automatically adapts patch radius to get roughly consistent patch sizes.

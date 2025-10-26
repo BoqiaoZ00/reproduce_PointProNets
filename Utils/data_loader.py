@@ -44,6 +44,45 @@ def load(folder_path, device=None):
 
     return meshes
 
+import torch
+
+def load_thimble(data_path, device=None):
+    """
+    Loads vertex positions (v) and vertex normals (vn).
+
+    This function assumes the .obj file is structured so that
+    the i-th 'v' line corresponds to the i-th 'vn' line, as
+    confirmed by the face data (e.g., 'f 8097/../8097').
+
+    Returns:
+        vertices: (N, 3) torch.FloatTensor of vertex positions
+        normals: (N, 3) torch.FloatTensor of vertex normals
+    """
+    vertices = []
+    normals = []
+
+    with open(data_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('v '):
+                parts = line.split()
+                vertices.append([float(parts[1]), float(parts[2]), float(parts[3])])
+            elif line.startswith('vn '):
+                parts = line.split()
+                normals.append([float(parts[1]), float(parts[2]), float(parts[3])])
+
+    vertices_tensor = torch.tensor(vertices, dtype=torch.float32, device=device)
+    normals_tensor = torch.tensor(normals, dtype=torch.float32, device=device)
+
+    # Sanity check to ensure the lists are the same length
+    if vertices_tensor.shape[0] != normals_tensor.shape[0]:
+        print(f"Warning: Vertex count ({vertices_tensor.shape[0]}) "
+              f"does not match normal count ({normals_tensor.shape[0]}).")
+        # You might want to raise an error here if they *must* match
+        # raise ValueError("Vertex and normal counts do not match!")
+
+    return vertices_tensor, normals_tensor
+
 
 def load_with_normals(folder_path, device=None):
     """
