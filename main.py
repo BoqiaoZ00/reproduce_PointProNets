@@ -334,7 +334,7 @@ def main():
     print(f"Loaded {vertices.shape[0]} vertices and {normals.shape[0]} normals.")
     print("Shapes:", vertices.shape, normals.shape)
 
-    patch_lists = split_thimble_into_patches(vertices, normals, num_patches=500, patch_radius=0.1)
+    patch_lists = split_thimble_into_patches(vertices, normals, num_patches=500, patch_radius=0.08)
     patch_vertices = [patch[0] for patch in patch_lists]
     patch_normals = [patch[1] for patch in patch_lists]
     # visualize_patches(patch_vertices, colorize=True)
@@ -344,8 +344,13 @@ def main():
 
     visualize_patch_with_normal(patch_vertices[0], per_patch_normals_list[0])
 
-    HN_clean = HGN.project_points_to_heightmap_test([patch_vertices[0]], [per_patch_normals_list[0]], r=0.1)
+    HN_clean = HGN.project_points_to_heightmap_test(
+        [patch_vertices[0]], [per_patch_normals_list[0]], r=0.1, sigma=2.0)
     plot_heightmap_2d(HN_clean[0])
+
+    # HN_clean = HGN.project_points_to_heightmap_test(
+    #     [patch_vertices[0]], [per_patch_normals_list[0]], r=0.05, sigma=2.0)
+    # plot_heightmap_2d(HN_clean[0])
 
     HN_clean_smooth = smooth_heightmap_numpy(HN_clean[0])
     plot_heightmap_2d(HN_clean_smooth)
