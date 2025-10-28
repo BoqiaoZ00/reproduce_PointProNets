@@ -55,7 +55,7 @@ class ThimblePatchHeightmapDataset(Dataset):
 
     def __init__(
         self,
-        data_path: str = "glof_ball_sim_data/thimble_surrounding_reordered_v_f.obj",
+        data_path: str = "golf_ball_sim_data/thimble_surrounding_reordered_v_f.obj",
         device: torch.device = torch.device("cpu"),
         k: int = 64,
         r: float = 0.1,
@@ -768,7 +768,7 @@ def run_denoising_training(
 
     # Datasets & loaders
     train_ds = ThimblePatchHeightmapDataset(
-        data_path="glof_ball_sim_data/thimble_surrounding_reordered_v_f.obj",
+        data_path="golf_ball_sim_data/thimble_surrounding_reordered_v_f.obj",
         k=32,              # must match what HGN projector returns
         r=0.1,            # projection radius
         num_patches_per_mesh=2000,
@@ -781,7 +781,7 @@ def run_denoising_training(
     print("Total training data patches:", len(train_ds))
 
     val_ds = ThimblePatchHeightmapDataset(
-        data_path="glof_ball_sim_data/thimble_surrounding_reordered_v_f.obj",
+        data_path="golf_ball_sim_data/thimble_surrounding_reordered_v_f.obj",
         k=32,  # must match what HGN projector returns
         r=0.1,  # your projection radius
         num_patches_per_mesh=100,
